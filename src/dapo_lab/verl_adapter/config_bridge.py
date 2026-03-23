@@ -1,0 +1,82 @@
+from __future__ import annotations
+
+from dataclasses import asdict
+
+from dapo_lab.config_schema import ExperimentConfig
+
+
+def build_verl_config(config: ExperimentConfig) -> dict:
+    policy = config.algorithm.policy_loss
+    filtering = config.algorithm.group_filtering
+    overlong = config.reward.overlong
+    adv_estimator = "gdpo" if config.algorithm.variant == "gdpo" else config.algorithm.advantage.mode
+    return {
+        "data": {
+            "train_files": config.data.train_files,
+            "val_files": config.data.val_files,
+            "train_batch_size": config.data.train_batch_size,
+            "gen_batch_size": config.data.gen_batch_size,
+            "prompt_key": config.data.prompt_key,
+            "max_prompt_length": config.data.max_prompt_length,
+            "max_response_length": config.data.max_response_length,
+        },
+        "algorithm": {
+            "adv_estimator": adv_estimator,
+            "filter_groups": {
+                "enable": filtering.enabled,
+                "metric": filtering.metric,
+                "max_num_gen_batches": filtering.max_num_gen_batches,
+            },
+            "gdpo_reward_keys": config.algorithm.gdpo.component_keys,
+            "gdpo_reward_weights": config.algorithm.gdpo.component_weights,
+        },
+        "reward": {
+            "reward_manager": {"name": "dapo_lab_local"},
+            "reward_kwargs": {
+                "overlong_buffer_cfg": {
+                    "enable": overlong.enabled,
+                    "len": overlong.buffer_length,
+                    "penalty_factor": overlong.penalty_factor,
+                    "log": overlong.log,
+                },
+                "max_resp_len": config.data.max_response_length,
+            },
+        },
+        "actor_rollout_ref": {
+            "hybrid_engine": True,
+            "model": {
+                "path": config.verl.model_path,
+                "trust_remote_code": config.verl.trust_remote_code,
+            },
+            "actor": {
+                "strategy": "fsdp",
+                "ppo_micro_batch_size_per_gpu": config.verl.actor.ppo_micro_batch_size_per_gpu,
+                "grad_clip": config.verl.actor.grad_clip,
+                "ppo_epochs": config.verl.actor.ppo_epochs,
+                "clip_ratio": policy.clip_ratio,
+                "clip_ratio_low": policy.clip_ratio_low,
+                "clip_ratio_high": policy.clip_ratio_high,
+                "clip_ratio_c": policy.clip_ratio_c,
+                "loss_agg_mode": policy.loss_agg_mode,
+            },
+            "rollout": {
+                "name": config.algorithm.rollout_behavior.backend,
+                "n": config.data.rollout_n,
+                "temperature": config.algorithm.rollout_behavior.temperature,
+                "top_p": config.algorithm.rollout_behavior.top_p,
+                "top_k": config.algorithm.rollout_behavior.top_k,
+                "response_length": config.data.max_response_length,
+                "tensor_model_parallel_size": config.verl.rollout.tensor_model_parallel_size,
+                "gpu_memory_utilization": config.verl.rollout.gpu_memory_utilization,
+                "enforce_eager": config.verl.rollout.enforce_eager,
+            },
+        },
+        "trainer": {
+            "project_name": config.experiment.name,
+            "experiment_name": config.experiment.name,
+            "save_freq": config.trainer.save_freq,
+            "test_freq": config.trainer.test_freq,
+            "val_before_train": config.trainer.val_before_train,
+        },
+        "dapo_lab": asdict(config),
+    }

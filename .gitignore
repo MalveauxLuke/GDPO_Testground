@@ -1,0 +1,32 @@
+.DS_Store
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+
+# Test and tooling caches
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Local environments
+.venv/
+venv/
+
+# Packaging artifacts
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/
+
+# Local outputs and logs
+outputs/
+slurm-*.out
+dapo-cert-*.out
+*.log
+
+# Editor metadata
+.vscode/
+.idea/

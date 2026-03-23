@@ -1,0 +1,4 @@
+{"prompt_id":"smoke-1","prompt":"Compute 2 + 2.","ground_truth":"4"}
+{"prompt_id":"smoke-2","prompt":"Compute 3 + 5.","ground_truth":"8"}
+{"prompt_id":"smoke-3","prompt":"Compute 7 - 1.","ground_truth":"6"}
+{"prompt_id":"smoke-4","prompt":"Compute 9 - 3.","ground_truth":"6"}

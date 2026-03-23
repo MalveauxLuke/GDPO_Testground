@@ -1,0 +1,2 @@
+{"prompt_id":"smoke-val-1","prompt":"Compute 1 + 4.","ground_truth":"5"}
+{"prompt_id":"smoke-val-2","prompt":"Compute 6 - 2.","ground_truth":"4"}
