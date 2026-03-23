@@ -20,6 +20,9 @@ dev = [
 [tool.setuptools]
 package-dir = {"" = "src"}
 
+[tool.setuptools.package-data]
+"dapo_lab.verl_adapter" = ["contracts/*.yaml"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

@@ -5,6 +5,7 @@ import pytest
 from dapo_lab.config_schema import ExperimentConfig
 from dapo_lab.trainer.state import BatchContext, PromptGroup, Trajectory
 from dapo_lab.validation import validate_experiment_config
+from dapo_lab.verl_adapter.contract import PINNED_VERL_COMMIT
 
 
 def build_config(variant: str = "dapo") -> ExperimentConfig:
@@ -85,7 +86,7 @@ def build_config(variant: str = "dapo") -> ExperimentConfig:
             "val_before_train": True,
         },
         "verl": {
-            "required_commit": "08e030d9b0d6f3c5c2f154ec28bf2ccb37cab375",
+            "required_commit": PINNED_VERL_COMMIT,
             "runtime_stack": "fsdp_vllm",
             "strict_compatibility": False,
             "model_path": "Qwen/Qwen2.5-7B",

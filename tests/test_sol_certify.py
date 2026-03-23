@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
 
+import pytest
 import yaml
 
-from dapo_lab.sol_certify import SuiteResult, run_certification, run_env_suite
+from dapo_lab.sol_certify import CertificationFailure, SuiteResult, run_certification, run_env_suite, run_preflight_suite
+from dapo_lab.verl_adapter.contract import PINNED_VERL_COMMIT
 
 
 def _write_smoke_config(tmp_path: Path) -> Path:
@@ -75,7 +78,7 @@ def _write_smoke_config(tmp_path: Path) -> Path:
             "val_before_train": False,
         },
         "verl": {
-            "required_commit": "08e030d9b0d6f3c5c2f154ec28bf2ccb37cab375",
+            "required_commit": PINNED_VERL_COMMIT,
             "runtime_stack": "fsdp_vllm",
             "strict_compatibility": False,
             "model_path": "Qwen/Qwen2.5-0.5B-Instruct",
@@ -110,9 +113,49 @@ def test_run_env_suite_writes_machine_readable_report(tmp_path: Path, monkeypatc
     assert (tmp_path / "reports" / "env_report.json").exists()
 
 
+def test_run_preflight_suite_writes_contract_report(tmp_path: Path, monkeypatch) -> None:
+    config_path = _write_smoke_config(tmp_path)
+
+    monkeypatch.setattr(
+        "dapo_lab.sol_certify._run_verl_runtime_preflight",
+        lambda config_path, bridge_payload: {
+            "compatibility": {"compatible": True, "required_commit": PINNED_VERL_COMMIT},
+            "reference_policy_required": False,
+            "critic_required": False,
+            "device": "cpu",
+        },
+    )
+    monkeypatch.setattr(
+        "dapo_lab.sol_certify.audit_live_checkout",
+        lambda verl_checkout=None: None,
+    )
+
+    result = run_preflight_suite(config_path, tmp_path / "reports")
+
+    assert result.passed is True
+    assert result.details["contract"]["ok"] is True
+    assert result.details["required_commit"] == PINNED_VERL_COMMIT
+    assert (tmp_path / "reports" / "preflight_report.json").exists()
+
+
+def test_run_preflight_suite_fails_before_runtime_on_contract_error(tmp_path: Path, monkeypatch) -> None:
+    config_path = _write_smoke_config(tmp_path)
+
+    def broken_bridge(_config):
+        payload = yaml.safe_load(config_path.read_text())
+        del payload["verl"]
+        return payload
+
+    monkeypatch.setattr("dapo_lab.sol_certify.build_verl_config", broken_bridge)
+
+    with pytest.raises(CertificationFailure, match="Pinned verl contract audit failed"):
+        run_preflight_suite(config_path, tmp_path / "reports")
+
+
 def test_run_certification_hf_runs_all_variants(tmp_path: Path, monkeypatch) -> None:
     config_path = _write_smoke_config(tmp_path)
 
+    monkeypatch.setattr("dapo_lab.sol_certify.run_preflight_suite", lambda config_path, report_dir, verl_checkout=None: SuiteResult(name="preflight", passed=True))
     monkeypatch.setattr("dapo_lab.sol_certify.run_env_suite", lambda config_path, report_dir, require_gpu: SuiteResult(name="env", passed=True))
 
     def fake_runtime_runner(runtime_config_path: Path, _work_dir: Path) -> dict:
@@ -137,5 +180,19 @@ def test_run_certification_hf_runs_all_variants(tmp_path: Path, monkeypatch) -> 
 
     assert result.passed is True
     report = json.loads((tmp_path / "certify" / "report.json").read_text())
-    child_names = [child["name"] for child in report["children"][1]["children"]]
+    assert [child["name"] for child in report["children"]] == ["preflight", "env", "hf"]
+    child_names = [child["name"] for child in report["children"][2]["children"]]
     assert child_names == ["hf:grpo", "hf:gdpo", "hf:dapo"]
+
+
+@pytest.mark.skipif(
+    any(importlib.util.find_spec(name) is None for name in ("verl", "ray", "omegaconf")),
+    reason="verl runtime stack is not installed in the active test environment",
+)
+def test_run_preflight_suite_passes_with_live_verl_stack(tmp_path: Path) -> None:
+    config_path = _write_smoke_config(tmp_path)
+
+    result = run_preflight_suite(config_path, tmp_path / "reports")
+
+    assert result.passed is True
+    assert result.details["runtime_validation"]["compatibility"]["required_commit"] == PINNED_VERL_COMMIT

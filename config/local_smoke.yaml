@@ -95,7 +95,7 @@ trainer:
   val_before_train: false
 
 verl:
-  required_commit: "08e030d9b0d6f3c5c2f154ec28bf2ccb37cab375"
+  required_commit: "7dc46e834209948cf1cdd8a04d83f82b4a7efd24"
   runtime_stack: local_smoke
   strict_compatibility: false
   model_path: not-used-in-local-smoke

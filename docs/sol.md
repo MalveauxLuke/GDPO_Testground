@@ -6,10 +6,11 @@ The intended order is:
 
 1. local smoke on your Mac
 2. SOL environment certification
-3. SOL debug runtime certification
-4. SOL HF certification matrix
-5. SOL vLLM certification matrix
-6. first real research run
+3. SOL pinned-`verl` preflight
+4. SOL debug runtime certification
+5. SOL HF certification matrix
+6. SOL vLLM certification matrix
+7. first real research run
 
 Primary references:
 
@@ -86,6 +87,22 @@ That script uses system `mamba`, creates a Python 3.10 env, installs `verl` in e
 
 ## 5. Run Certification
 
+Before any GPU job, run the non-GPU pinned-contract preflight from `lightwork`:
+
+```bash
+cd ~/GDPO_Testground
+source scripts/sol/session_env.sh
+$ENV_PREFIX/bin/python -m dapo_lab.sol_certify --suite preflight --config config/sol_smoke.yaml --verl-checkout "$VERL_DIR"
+```
+
+This preflight does three things before you ask Slurm for a GPU:
+
+- builds the local `verl` bridge from the pinned scaffold for commit `7dc46e834209948cf1cdd8a04d83f82b4a7efd24`
+- audits the result against the checked-in contract manifest
+- runs upstream `OmegaConf.create(...)`, `auto_set_device(...)`, `migrate_legacy_reward_impl(...)`, and `validate_config(...)`
+
+If this fails, fix the bridge first. Do not burn another GPU allocation on `debug`, `hf`, or `vllm` until `preflight` is green.
+
 Before the GPU suites, the non-GPU env suite should now print progress lines such as:
 
 - `starting env suite`
@@ -101,6 +118,8 @@ Short GPU debug check:
 ```bash
 sbatch scripts/sol/run_certify_debug.sbatch
 ```
+
+`debug`, `hf`, and `vllm` also rerun the same preflight internally as a defensive guard, and they compare the pinned contract against the live checkout in `VERL_DIR` with warning-only drift messages.
 
 Full HF matrix:
 

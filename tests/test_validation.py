@@ -2,6 +2,7 @@ import pytest
 
 from dapo_lab.config_schema import ExperimentConfig
 from dapo_lab.validation import ConfigValidationError, validate_experiment_config
+from dapo_lab.verl_adapter.contract import PINNED_VERL_COMMIT
 
 from .conftest import build_config
 
@@ -59,7 +60,7 @@ def test_dapo_requires_a_dapo_surface() -> None:
         },
         "trainer": {"log_level": "info", "diagnostics": {}, "save_freq": 10, "test_freq": 10, "val_before_train": True},
         "verl": {
-            "required_commit": "08e030d9b0d6f3c5c2f154ec28bf2ccb37cab375",
+            "required_commit": PINNED_VERL_COMMIT,
             "runtime_stack": "fsdp_vllm",
             "strict_compatibility": False,
             "model_path": "Qwen/Qwen2.5-7B",

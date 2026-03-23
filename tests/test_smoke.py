@@ -6,6 +6,7 @@ from pathlib import Path
 import yaml
 
 from dapo_lab.smoke import run_local_smoke
+from dapo_lab.verl_adapter.contract import PINNED_VERL_COMMIT
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
@@ -107,7 +108,7 @@ def _write_smoke_config(tmp_path: Path, *, variant: str) -> Path:
             "val_before_train": False,
         },
         "verl": {
-            "required_commit": "08e030d9b0d6f3c5c2f154ec28bf2ccb37cab375",
+            "required_commit": PINNED_VERL_COMMIT,
             "runtime_stack": "local_smoke",
             "strict_compatibility": False,
             "model_path": "not-used-in-local-smoke",

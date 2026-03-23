@@ -9,6 +9,14 @@ Check:
 - `src/dapo_lab/verl_adapter/compat.py`
 - `config/experiment.yaml -> verl.required_commit`
 
+Before any GPU suite, also run:
+
+```bash
+python -m dapo_lab.sol_certify --suite preflight --config config/sol_smoke.yaml --verl-checkout "$VERL_DIR"
+```
+
+That catches most bridge/config mismatches before they become Ray or Slurm job failures.
+
 ## `group filtering must be false for grpo`
 
 The naive GRPO baseline in this repo is intentionally simple. Disable:

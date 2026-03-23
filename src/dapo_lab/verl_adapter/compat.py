@@ -4,8 +4,9 @@ import importlib.util
 import os
 from dataclasses import dataclass
 
+from .contract import PINNED_VERL_COMMIT
 
-SUPPORTED_VERL_COMMIT = "08e030d9b0d6f3c5c2f154ec28bf2ccb37cab375"
+SUPPORTED_VERL_COMMIT = PINNED_VERL_COMMIT
 
 
 @dataclass(slots=True)

@@ -4,6 +4,7 @@ from dapo_lab.config_schema import ExperimentConfig
 
 from .compat import CompatibilityReport
 from .config_bridge import build_verl_config
+from .contract import audit_bridge_config
 from .trainer import ResearchTrainer
 
 
@@ -12,6 +13,19 @@ def launch_with_verl(config: ExperimentConfig, compatibility: CompatibilityRepor
         raise RuntimeError(compatibility.message)
 
     bridge_config = build_verl_config(config)
+    contract_audit = audit_bridge_config(bridge_config)
+    if not contract_audit.ok:
+        problems: list[str] = []
+        if contract_audit.missing_top_level:
+            problems.append(f"missing top-level: {', '.join(contract_audit.missing_top_level)}")
+        if contract_audit.unexpected_top_level:
+            problems.append(f"unexpected top-level: {', '.join(contract_audit.unexpected_top_level)}")
+        if contract_audit.missing_paths:
+            problems.append(f"missing paths: {', '.join(contract_audit.missing_paths)}")
+        if contract_audit.missing_target_paths:
+            problems.append(f"missing _target_ paths: {', '.join(contract_audit.missing_target_paths)}")
+        problems.extend(contract_audit.semantic_errors)
+        raise RuntimeError("Pinned verl contract audit failed before runtime launch:\n" + "\n".join(problems))
     try:
         import ray  # type: ignore
         from omegaconf import OmegaConf  # type: ignore
@@ -88,4 +102,9 @@ def launch_with_verl(config: ExperimentConfig, compatibility: CompatibilityRepor
     upstream_config = OmegaConf.create(bridge_config)
     auto_set_device(upstream_config)
     upstream_config = migrate_legacy_reward_impl(upstream_config)
+    validate_config(
+        config=upstream_config,
+        use_reference_policy=need_reference_policy(upstream_config),
+        use_critic=need_critic(upstream_config),
+    )
     run_ppo(upstream_config, task_runner_class=ray.remote(num_cpus=1)(ResearchTaskRunner))

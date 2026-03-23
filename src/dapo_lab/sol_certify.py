@@ -11,16 +11,19 @@ import subprocess
 import sys
 from copy import deepcopy
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
 
 import yaml
 
 from dapo_lab.validation import load_experiment_config
+from dapo_lab.verl_adapter.compat import check_verl_compatibility
+from dapo_lab.verl_adapter.config_bridge import build_verl_config
+from dapo_lab.verl_adapter.contract import PINNED_VERL_COMMIT, audit_bridge_config, audit_live_checkout
 
 
-SUITES = {"env", "debug", "hf", "vllm", "all"}
+SUITES = {"env", "preflight", "debug", "hf", "vllm", "all"}
 TINY_SMOKE_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
 
 
@@ -48,7 +51,7 @@ RuntimeRunner = Callable[[Path, Path], dict[str, Any]]
 
 
 def _timestamp() -> str:
-    return datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -79,6 +82,21 @@ def _suite_root(config_path: Path, output_dir: str | None) -> Path:
         return Path(output_dir).resolve()
     config = load_experiment_config(config_path)
     return Path(config.experiment.output_dir) / "certify" / _timestamp()
+
+
+def _audit_lines(audit: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if audit.get("missing_top_level"):
+        lines.append(f"missing top-level: {', '.join(audit['missing_top_level'])}")
+    if audit.get("unexpected_top_level"):
+        lines.append(f"unexpected top-level: {', '.join(audit['unexpected_top_level'])}")
+    if audit.get("missing_paths"):
+        lines.append(f"missing paths: {', '.join(audit['missing_paths'])}")
+    if audit.get("missing_target_paths"):
+        lines.append(f"missing _target_ paths: {', '.join(audit['missing_target_paths'])}")
+    if audit.get("semantic_errors"):
+        lines.extend(audit["semantic_errors"])
+    return lines
 
 
 def _check_import(module_name: str) -> dict[str, Any]:
@@ -138,6 +156,53 @@ def _check_transformers_model(model_name: str, cache_dir: str | None) -> dict[st
     }
 
 
+def _run_verl_runtime_preflight(config_path: Path, bridge_payload: dict[str, Any]) -> dict[str, Any]:
+    config = load_experiment_config(config_path)
+    compatibility = check_verl_compatibility(
+        required_commit=config.verl.required_commit,
+        strict=config.verl.strict_compatibility,
+    )
+    _require(compatibility.importable, compatibility.message)
+
+    try:
+        from omegaconf import OmegaConf  # type: ignore
+        from verl.experimental.reward_loop import migrate_legacy_reward_impl  # type: ignore
+        from verl.trainer.ppo.utils import need_critic, need_reference_policy  # type: ignore
+        from verl.utils.config import validate_config  # type: ignore
+        from verl.utils.device import auto_set_device  # type: ignore
+    except Exception as error:
+        raise CertificationFailure(
+            "Pinned contract passed, but the local verl runtime stack is incomplete. "
+            "Install verl, ray, hydra, and omegaconf in the active environment."
+        ) from error
+
+    _log("building OmegaConf config from pinned scaffold bridge")
+    upstream_config = OmegaConf.create(bridge_payload)
+    auto_set_device(upstream_config)
+    _log("running legacy reward migration")
+    upstream_config = migrate_legacy_reward_impl(upstream_config)
+    reference_policy_required = bool(need_reference_policy(upstream_config))
+    critic_required = bool(need_critic(upstream_config))
+    _log("running upstream verl validate_config")
+    validate_config(
+        config=upstream_config,
+        use_reference_policy=reference_policy_required,
+        use_critic=critic_required,
+    )
+    return {
+        "compatibility": {
+            "importable": compatibility.importable,
+            "detected_commit": compatibility.detected_commit,
+            "required_commit": compatibility.required_commit,
+            "compatible": compatibility.compatible,
+            "message": compatibility.message,
+        },
+        "reference_policy_required": reference_policy_required,
+        "critic_required": critic_required,
+        "device": upstream_config.trainer.device,
+    }
+
+
 def _ensure_sol_cache_env() -> dict[str, str]:
     defaults = {
         "HF_HOME": f"/scratch/{os.environ['USER']}/dapo_lab/hf",
@@ -157,9 +222,47 @@ def _ensure_sol_cache_env() -> dict[str, str]:
         "RAY_TMPDIR": os.environ["RAY_TMPDIR"],
         "TORCH_EXTENSIONS_DIR": os.environ["TORCH_EXTENSIONS_DIR"],
     }
-    for value in realized.values():
-        Path(value).mkdir(parents=True, exist_ok=True)
+    for key, value in realized.items():
+        try:
+            Path(value).mkdir(parents=True, exist_ok=True)
+        except OSError as error:
+            raise CertificationFailure(
+                f"Could not create {key} at {value!r}. The SOL env suite expects writable /scratch-backed cache paths."
+            ) from error
     return realized
+
+
+def run_preflight_suite(
+    config_path: Path,
+    report_dir: Path,
+    *,
+    verl_checkout: str | os.PathLike[str] | None = None,
+) -> SuiteResult:
+    _log("starting preflight suite")
+    config = load_experiment_config(config_path)
+    bridge_payload = build_verl_config(config)
+    contract_audit = audit_bridge_config(bridge_payload)
+    audit_details = contract_audit.to_dict()
+    _require(contract_audit.ok, "Pinned verl contract audit failed:\n" + "\n".join(_audit_lines(audit_details)))
+
+    details: dict[str, Any] = {
+        "pinned_commit": PINNED_VERL_COMMIT,
+        "required_commit": config.verl.required_commit,
+        "bridge_top_level_keys": sorted(bridge_payload.keys()),
+        "contract": audit_details,
+    }
+
+    live_drift = audit_live_checkout(verl_checkout)
+    if live_drift is not None:
+        details["live_checkout"] = live_drift.to_dict()
+        for warning in live_drift.warnings:
+            _log(f"live drift warning: {warning}")
+
+    details["runtime_validation"] = _run_verl_runtime_preflight(config_path, bridge_payload)
+    result = SuiteResult(name="preflight", passed=True, details=details)
+    _write_json(report_dir / "preflight_report.json", result.to_dict())
+    _log("preflight suite passed")
+    return result
 
 
 def run_env_suite(config_path: Path, report_dir: Path, *, require_gpu: bool) -> SuiteResult:
@@ -342,6 +445,8 @@ def run_certification(
     config_path: Path,
     output_dir: str | None = None,
     runtime_runner: RuntimeRunner | None = None,
+    verl_checkout: str | os.PathLike[str] | None = None,
+    include_preflight: bool = True,
 ) -> SuiteResult:
     if suite not in SUITES:
         raise CertificationFailure(f"Unsupported suite {suite!r}. Expected one of {sorted(SUITES)}.")
@@ -350,8 +455,14 @@ def run_certification(
 
     if suite == "env":
         result = run_env_suite(config_path, report_dir, require_gpu=False)
+    elif suite == "preflight":
+        result = run_preflight_suite(config_path, report_dir, verl_checkout=verl_checkout)
     elif suite == "debug":
+        children: list[SuiteResult] = []
+        if include_preflight:
+            children.append(run_preflight_suite(config_path, report_dir, verl_checkout=verl_checkout))
         env_result = run_env_suite(config_path, report_dir, require_gpu=True)
+        children.append(env_result)
         debug_result = run_runtime_suite(
             config_path,
             report_dir,
@@ -360,9 +471,14 @@ def run_certification(
             variants=["grpo"],
             runtime_runner=runtime_runner,
         )
-        result = SuiteResult(name="debug", passed=True, children=[env_result, debug_result])
+        children.append(debug_result)
+        result = SuiteResult(name="debug", passed=True, children=children)
     elif suite == "hf":
+        children = []
+        if include_preflight:
+            children.append(run_preflight_suite(config_path, report_dir, verl_checkout=verl_checkout))
         env_result = run_env_suite(config_path, report_dir, require_gpu=True)
+        children.append(env_result)
         hf_result = run_runtime_suite(
             config_path,
             report_dir,
@@ -371,9 +487,14 @@ def run_certification(
             variants=["grpo", "gdpo", "dapo"],
             runtime_runner=runtime_runner,
         )
-        result = SuiteResult(name="hf", passed=True, children=[env_result, hf_result])
+        children.append(hf_result)
+        result = SuiteResult(name="hf", passed=True, children=children)
     elif suite == "vllm":
+        children = []
+        if include_preflight:
+            children.append(run_preflight_suite(config_path, report_dir, verl_checkout=verl_checkout))
         env_result = run_env_suite(config_path, report_dir, require_gpu=True)
+        children.append(env_result)
         vllm_result = run_runtime_suite(
             config_path,
             report_dir,
@@ -382,13 +503,36 @@ def run_certification(
             variants=["grpo", "gdpo", "dapo"],
             runtime_runner=runtime_runner,
         )
-        result = SuiteResult(name="vllm", passed=True, children=[env_result, vllm_result])
+        children.append(vllm_result)
+        result = SuiteResult(name="vllm", passed=True, children=children)
     else:
         env_result = run_env_suite(config_path, report_dir, require_gpu=False)
-        debug_result = run_certification(suite="debug", config_path=config_path, output_dir=str(report_dir / "debug"), runtime_runner=runtime_runner)
-        hf_result = run_certification(suite="hf", config_path=config_path, output_dir=str(report_dir / "hf"), runtime_runner=runtime_runner)
-        vllm_result = run_certification(suite="vllm", config_path=config_path, output_dir=str(report_dir / "vllm"), runtime_runner=runtime_runner)
-        result = SuiteResult(name="all", passed=True, children=[env_result, debug_result, hf_result, vllm_result])
+        preflight_result = run_preflight_suite(config_path, report_dir, verl_checkout=verl_checkout)
+        debug_result = run_certification(
+            suite="debug",
+            config_path=config_path,
+            output_dir=str(report_dir / "debug"),
+            runtime_runner=runtime_runner,
+            verl_checkout=verl_checkout,
+            include_preflight=False,
+        )
+        hf_result = run_certification(
+            suite="hf",
+            config_path=config_path,
+            output_dir=str(report_dir / "hf"),
+            runtime_runner=runtime_runner,
+            verl_checkout=verl_checkout,
+            include_preflight=False,
+        )
+        vllm_result = run_certification(
+            suite="vllm",
+            config_path=config_path,
+            output_dir=str(report_dir / "vllm"),
+            runtime_runner=runtime_runner,
+            verl_checkout=verl_checkout,
+            include_preflight=False,
+        )
+        result = SuiteResult(name="all", passed=True, children=[env_result, preflight_result, debug_result, hf_result, vllm_result])
 
     _write_json(report_dir / "report.json", result.to_dict())
     return result
@@ -399,8 +543,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--suite", required=True, choices=sorted(SUITES))
     parser.add_argument("--config", default="config/sol_smoke.yaml")
     parser.add_argument("--output-dir", default=None)
+    parser.add_argument("--verl-checkout", default=None)
     args = parser.parse_args(argv)
-    result = run_certification(suite=args.suite, config_path=Path(args.config), output_dir=args.output_dir)
+    result = run_certification(
+        suite=args.suite,
+        config_path=Path(args.config),
+        output_dir=args.output_dir,
+        verl_checkout=args.verl_checkout,
+    )
     print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
     return 0
 

@@ -18,4 +18,4 @@ module load "$CUDA_MODULE"
 source activate "$ENV_PREFIX"
 
 cd "$REPO_DIR"
-python -m dapo_lab.sol_certify --suite hf --config config/sol_smoke.yaml
+python -m dapo_lab.sol_certify --suite hf --config config/sol_smoke.yaml --verl-checkout "$VERL_DIR"
