@@ -21,6 +21,7 @@ from dapo_lab.validation import load_experiment_config
 from dapo_lab.verl_adapter.compat import check_verl_compatibility
 from dapo_lab.verl_adapter.config_bridge import build_verl_config
 from dapo_lab.verl_adapter.contract import PINNED_VERL_COMMIT, audit_bridge_config, audit_live_checkout
+from dapo_lab.verl_adapter.runtime_artifacts import probe_runtime_artifacts
 
 
 SUITES = {"env", "preflight", "debug", "hf", "vllm", "all"}
@@ -189,6 +190,16 @@ def _run_verl_runtime_preflight(config_path: Path, bridge_payload: dict[str, Any
         use_reference_policy=reference_policy_required,
         use_critic=critic_required,
     )
+    _log("probing runtime tokenizer/processor load path")
+    try:
+        artifacts = probe_runtime_artifacts(
+            model_path=upstream_config.actor_rollout_ref.model.path,
+            trust_remote_code=bool(upstream_config.actor_rollout_ref.model.trust_remote_code),
+            use_shm=bool(upstream_config.actor_rollout_ref.model.get("use_shm", False)),
+            log=_log,
+        )
+    except Exception as error:
+        raise CertificationFailure(f"Runtime artifact probe failed: {error}") from error
     return {
         "compatibility": {
             "importable": compatibility.importable,
@@ -200,6 +211,13 @@ def _run_verl_runtime_preflight(config_path: Path, bridge_payload: dict[str, Any
         "reference_policy_required": reference_policy_required,
         "critic_required": critic_required,
         "device": upstream_config.trainer.device,
+        "artifact_probe": {
+            "local_path": artifacts.local_path,
+            "model_type": artifacts.model_type,
+            "tokenizer_class": artifacts.tokenizer_class,
+            "processor_class": artifacts.processor_class,
+            "processor_mode": artifacts.processor_mode,
+        },
     }
 
 

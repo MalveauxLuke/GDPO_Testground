@@ -100,6 +100,7 @@ This preflight does three things before you ask Slurm for a GPU:
 - builds the local `verl` bridge from the pinned scaffold for commit `7dc46e834209948cf1cdd8a04d83f82b4a7efd24`
 - audits the result against the checked-in contract manifest
 - runs upstream `OmegaConf.create(...)`, `auto_set_device(...)`, `migrate_legacy_reward_impl(...)`, and `validate_config(...)`
+- probes the same runtime model-loading path used by `ResearchTaskRunner`, including `copy_to_local(...)`, tokenizer loading, and processor loading or text-only processor skipping
 
 If this fails, fix the bridge first. Do not burn another GPU allocation on `debug`, `hf`, or `vllm` until `preflight` is green.
 
@@ -120,6 +121,7 @@ sbatch scripts/sol/run_certify_debug.sbatch
 ```
 
 `debug`, `hf`, and `vllm` also rerun the same preflight internally as a defensive guard, and they compare the pinned contract against the live checkout in `VERL_DIR` with warning-only drift messages.
+The debug job currently uses a 30-minute wall clock during bring-up so slow runtime startup can be distinguished from a real hang.
 
 Full HF matrix:
 

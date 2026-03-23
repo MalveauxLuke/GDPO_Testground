@@ -123,6 +123,13 @@ def test_run_preflight_suite_writes_contract_report(tmp_path: Path, monkeypatch)
             "reference_policy_required": False,
             "critic_required": False,
             "device": "cpu",
+            "artifact_probe": {
+                "local_path": "/tmp/model",
+                "model_type": "qwen2",
+                "tokenizer_class": "DummyTokenizer",
+                "processor_class": None,
+                "processor_mode": "skipped_text_only",
+            },
         },
     )
     monkeypatch.setattr(
@@ -135,6 +142,7 @@ def test_run_preflight_suite_writes_contract_report(tmp_path: Path, monkeypatch)
     assert result.passed is True
     assert result.details["contract"]["ok"] is True
     assert result.details["required_commit"] == PINNED_VERL_COMMIT
+    assert result.details["runtime_validation"]["artifact_probe"]["processor_mode"] == "skipped_text_only"
     assert (tmp_path / "reports" / "preflight_report.json").exists()
 
 
