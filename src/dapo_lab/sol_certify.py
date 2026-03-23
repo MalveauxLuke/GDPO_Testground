@@ -6,6 +6,7 @@ import importlib.util
 import json
 import math
 import os
+import inspect
 import subprocess
 import sys
 from copy import deepcopy
@@ -90,9 +91,20 @@ def _check_import(module_name: str) -> dict[str, Any]:
 
 def _check_ray() -> dict[str, Any]:
     ray = importlib.import_module("ray")
-    ray.init(local_mode=True, ignore_reinit_error=True)
-    resources = ray.cluster_resources()
-    ray.shutdown()
+    init_kwargs: dict[str, Any] = {"ignore_reinit_error": True}
+    signature = inspect.signature(ray.init)
+    if "include_dashboard" in signature.parameters:
+        init_kwargs["include_dashboard"] = False
+    if "_temp_dir" in signature.parameters:
+        init_kwargs["_temp_dir"] = os.environ.get("RAY_TMPDIR")
+    if "num_cpus" in signature.parameters:
+        init_kwargs["num_cpus"] = 1
+
+    context = ray.init(**init_kwargs)
+    try:
+        resources = ray.cluster_resources()
+    finally:
+        ray.shutdown()
     return {"cluster_resources": resources}
 
 
