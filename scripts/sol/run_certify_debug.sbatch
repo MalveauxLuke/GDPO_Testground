@@ -2,7 +2,7 @@
 #SBATCH -J dapo-cert-debug
 #SBATCH -p htc
 #SBATCH -q debug
-#SBATCH -t 0-00:30:00
+#SBATCH -t 0-00:15:00
 #SBATCH -c 8
 #SBATCH --mem=64G
 #SBATCH -G a100:1
