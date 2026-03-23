@@ -70,6 +70,7 @@ def build_verl_config(config: ExperimentConfig) -> dict:
             "prompt_key": config.data.prompt_key,
             "max_prompt_length": config.data.max_prompt_length,
             "max_response_length": config.data.max_response_length,
+            "seed": config.experiment.seed,
             "trust_remote_code": config.verl.trust_remote_code,
             "return_raw_chat": True,
             "shuffle": True,

@@ -19,10 +19,12 @@ required_paths:
   - data.train_files
   - data.val_files
   - data.train_batch_size
-  - data.gen_batch_size
   - data.prompt_key
   - data.max_prompt_length
   - data.max_response_length
+  - data.seed
+  - data.sampler.class_path
+  - data.sampler.class_name
   - algorithm.adv_estimator
   - algorithm.norm_adv_by_std_in_grpo
   - algorithm.use_kl_in_reward

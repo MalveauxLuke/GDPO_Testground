@@ -98,6 +98,22 @@ def test_contract_audit_catches_missing_use_dynamic_bsz() -> None:
     assert audit.missing_paths == ["actor_rollout_ref.actor.use_dynamic_bsz"]
 
 
+def test_contract_audit_catches_missing_data_sampler() -> None:
+    bridged = build_verl_config(build_config("grpo"))
+    broken = deepcopy(bridged)
+    del broken["data"]["sampler"]
+
+    audit = audit_bridge_config(broken)
+
+    assert audit.ok is False
+    assert audit.missing_paths == sorted(
+        [
+            "data.sampler.class_name",
+            "data.sampler.class_path",
+        ]
+    )
+
+
 def test_contract_audit_catches_bad_actor_mini_batch_size() -> None:
     bridged = build_verl_config(build_config("grpo"))
     broken = deepcopy(bridged)
