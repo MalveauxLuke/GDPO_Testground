@@ -365,21 +365,33 @@ def _variant_runtime_payload(
 
 
 def run_training_subprocess(config_path: Path, work_dir: Path) -> dict[str, Any]:
-    result = subprocess.run(
-        [sys.executable, "-m", "dapo_lab.train", str(config_path)],
+    command = [sys.executable, "-m", "dapo_lab.train", str(config_path)]
+    _log(f"launching training subprocess: {' '.join(command)}")
+    combined_output: list[str] = []
+    with subprocess.Popen(
+        command,
         cwd=str(work_dir),
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
         text=True,
-    )
-    if result.returncode != 0:
+        bufsize=1,
+    ) as process:
+        _require(process.stdout is not None, "Training subprocess stdout pipe was not created.")
+        for line in process.stdout:
+            print(line, end="", flush=True)
+            combined_output.append(line)
+        returncode = process.wait()
+
+    joined_output = "".join(combined_output)
+    if returncode != 0:
         raise CertificationFailure(
-            f"Training command failed for {config_path.name}.\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+            f"Training command failed for {config_path.name}.\nOUTPUT:\n{joined_output}"
         )
     report_path = Path(load_experiment_config(config_path).trainer.diagnostics.report_path or "")
     _require(report_path.exists(), f"Expected runtime report not written: {report_path}")
     payload = json.loads(report_path.read_text())
-    payload["stdout"] = result.stdout
-    payload["stderr"] = result.stderr
+    payload["stdout"] = joined_output
+    payload["stderr"] = ""
     return payload
 
 
@@ -414,6 +426,7 @@ def run_runtime_suite(
     base_config = load_experiment_config(config_path)
     children: list[SuiteResult] = []
     for variant in variants:
+        _log(f"starting runtime suite {suite_name}:{variant}")
         variant_dir = report_dir / suite_name / variant
         runtime_output_dir = variant_dir / "runtime_output"
         runtime_report_path = variant_dir / "runtime_report.json"
