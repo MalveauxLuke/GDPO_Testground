@@ -7,6 +7,7 @@ from dapo_lab.config_schema import ExperimentConfig
 
 def _reward_model_rollout(config: ExperimentConfig) -> dict:
     return {
+        "_target_": "verl.workers.config.RolloutConfig",
         "name": config.algorithm.rollout_behavior.backend,
         "dtype": "bfloat16",
         "gpu_memory_utilization": config.verl.rollout.gpu_memory_utilization,
@@ -148,9 +149,11 @@ def build_verl_config(config: ExperimentConfig) -> dict:
                 "name": "compute_score",
             },
             "reward_manager": {
+                "_target_": "verl.workers.config.reward_model.RewardManagerConfig",
                 "source": "register",
                 "name": _reward_manager_name(config),
                 "module": {
+                    "_target_": "verl.trainer.config.config.ModuleConfig",
                     "path": None,
                     "name": "custom_reward_manager",
                 },
@@ -179,6 +182,7 @@ def build_verl_config(config: ExperimentConfig) -> dict:
                 "use_shm": False,
             },
             "actor": {
+                "_target_": "verl.workers.config.FSDPActorConfig",
                 "strategy": "fsdp",
                 "rollout_n": config.data.rollout_n,
                 "ppo_mini_batch_size": config.data.train_batch_size * config.data.rollout_n,
@@ -205,6 +209,7 @@ def build_verl_config(config: ExperimentConfig) -> dict:
                 "data_loader_seed": config.experiment.seed,
             },
             "rollout": {
+                "_target_": "verl.workers.config.RolloutConfig",
                 "name": config.algorithm.rollout_behavior.backend,
                 "mode": "async",
                 "nnodes": 0,
@@ -228,6 +233,7 @@ def build_verl_config(config: ExperimentConfig) -> dict:
                 "log_prob_use_dynamic_bsz": False,
                 "log_prob_max_token_len_per_gpu": 16384,
                 "val_kwargs": {
+                    "_target_": "verl.workers.config.SamplingConfig",
                     "top_k": -1,
                     "top_p": 1.0,
                     "temperature": 0.0,

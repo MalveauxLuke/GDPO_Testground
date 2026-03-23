@@ -33,9 +33,12 @@ def test_build_verl_config_keeps_bridge_small_and_direct() -> None:
     assert bridged["transfer_queue"]["enable"] is False
     assert bridged["trainer"]["n_gpus_per_node"] == 1
     assert bridged["critic"]["enable"] is False
+    assert bridged["actor_rollout_ref"]["actor"]["_target_"] == "verl.workers.config.FSDPActorConfig"
     assert bridged["actor_rollout_ref"]["actor"]["use_dynamic_bsz"] is False
     assert bridged["actor_rollout_ref"]["actor"]["ppo_mini_batch_size"] == config.data.train_batch_size * config.data.rollout_n
+    assert bridged["actor_rollout_ref"]["rollout"]["_target_"] == "verl.workers.config.RolloutConfig"
     assert bridged["actor_rollout_ref"]["rollout"]["log_prob_micro_batch_size_per_gpu"] == 1
+    assert bridged["actor_rollout_ref"]["rollout"]["val_kwargs"]["_target_"] == "verl.workers.config.SamplingConfig"
     assert bridged["actor_rollout_ref"]["rollout"]["val_kwargs"]["do_sample"] is False
 
 
@@ -47,6 +50,8 @@ def test_build_verl_config_passes_gdpo_keys_and_weights() -> None:
     assert bridged["algorithm"]["gdpo_reward_keys"] == ["accuracy", "boxed_format"]
     assert bridged["algorithm"]["gdpo_reward_weights"] == [1.0, 0.1]
     assert bridged["reward"]["reward_manager"]["name"] == "gdpo"
+    assert bridged["reward"]["reward_manager"]["_target_"] == "verl.workers.config.reward_model.RewardManagerConfig"
     assert bridged["reward"]["reward_model"]["rollout"]["name"] == config.algorithm.rollout_behavior.backend
+    assert bridged["reward"]["reward_model"]["rollout"]["_target_"] == "verl.workers.config.RolloutConfig"
     assert bridged["actor_rollout_ref"]["rollout"]["prompt_length"] == config.data.max_prompt_length
     assert bridged["actor_rollout_ref"]["actor"]["use_kl_loss"] is False
