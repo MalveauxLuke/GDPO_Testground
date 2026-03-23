@@ -1,24 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_DIR="${REPO_DIR:-$HOME/GRPO}"
+REPO_DIR="${REPO_DIR:-$HOME/GDPO_Testground}"
 VERL_DIR="${VERL_DIR:-$HOME/verl}"
 ENV_PREFIX="${ENV_PREFIX:-$HOME/.conda/envs/dapo-lab}"
 CUDA_MODULE="${CUDA_MODULE:-cuda-12.6.1-gcc-12.1.0}"
 PYTHON_VERSION="${PYTHON_VERSION:-3.10}"
 
-export HF_HOME="${HF_HOME:-/scratch/$USER/dapo_lab/hf}"
-export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-$HF_HOME}"
-export VLLM_CACHE_ROOT="${VLLM_CACHE_ROOT:-/scratch/$USER/dapo_lab/vllm}"
-export RAY_TMPDIR="${RAY_TMPDIR:-/scratch/$USER/dapo_lab/ray}"
-export TORCH_EXTENSIONS_DIR="${TORCH_EXTENSIONS_DIR:-/scratch/$USER/dapo_lab/torch}"
-
-mkdir -p "$HF_HOME" "$VLLM_CACHE_ROOT" "$RAY_TMPDIR" "$TORCH_EXTENSIONS_DIR"
+source "$(dirname "$0")/session_env.sh"
 
 module load mamba/latest
 module load "$CUDA_MODULE"
 
-mamba create -y -p "$ENV_PREFIX" "python=$PYTHON_VERSION"
+if [ ! -d "$ENV_PREFIX" ]; then
+  mamba create -y -p "$ENV_PREFIX" "python=$PYTHON_VERSION"
+fi
 source activate "$ENV_PREFIX"
 
 python -m pip install --upgrade pip

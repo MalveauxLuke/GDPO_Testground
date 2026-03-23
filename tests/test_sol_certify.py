@@ -93,6 +93,12 @@ def _write_smoke_config(tmp_path: Path) -> Path:
 
 def test_run_env_suite_writes_machine_readable_report(tmp_path: Path, monkeypatch) -> None:
     config_path = _write_smoke_config(tmp_path)
+    scratch_root = tmp_path / "scratch"
+    monkeypatch.setenv("HF_HOME", str(scratch_root / "hf"))
+    monkeypatch.setenv("TRANSFORMERS_CACHE", str(scratch_root / "hf"))
+    monkeypatch.setenv("VLLM_CACHE_ROOT", str(scratch_root / "vllm"))
+    monkeypatch.setenv("RAY_TMPDIR", str(scratch_root / "ray"))
+    monkeypatch.setenv("TORCH_EXTENSIONS_DIR", str(scratch_root / "torch"))
 
     monkeypatch.setattr("dapo_lab.sol_certify._check_import", lambda name: {"module": name})
     monkeypatch.setattr("dapo_lab.sol_certify._check_ray", lambda: {"cluster_resources": {"CPU": 1}})

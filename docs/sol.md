@@ -36,7 +36,7 @@ python -m dapo_lab.smoke config/local_gdpo_smoke.yaml
 
 Persistent:
 
-- repo: `/data/grp_XXXX/dapo_lab` or `~/GRPO`
+- repo: `/data/grp_XXXX/dapo_lab` or `~/GDPO_Testground`
 - env: `/data/grp_XXXX/.conda/envs/dapo-lab` or `~/.conda/envs/dapo-lab`
 - reports/checkpoints: `/data/grp_XXXX/runs/dapo_lab/...`
 
@@ -48,7 +48,25 @@ Scratch:
 - `RAY_TMPDIR=/scratch/$USER/dapo_lab/ray`
 - `TORCH_EXTENSIONS_DIR=/scratch/$USER/dapo_lab/torch`
 
-## 3. Build The Environment
+## 3. Bootstrap Every New Shell
+
+In every fresh SOL terminal, run:
+
+```bash
+cd ~/GDPO_Testground
+source scripts/sol/session_env.sh
+```
+
+This exports:
+
+- `REPO_DIR`
+- `VERL_DIR`
+- `ENV_PREFIX`
+- scratch-backed cache paths
+
+It also creates the scratch cache directories so `sol_certify` and the runtime jobs do not depend on stale shell state.
+
+## 4. Build The Environment
 
 Use a lightwork-style allocation first:
 
@@ -59,12 +77,24 @@ interactive -p lightwork -q public -t 0-02:00:00 -c 4 --mem=16G
 Then run:
 
 ```bash
+cd ~/GDPO_Testground
+source scripts/sol/session_env.sh
 bash scripts/sol/create_env.sh
 ```
 
 That script uses system `mamba`, creates a Python 3.10 env, installs `verl` in editable mode, installs this repo in editable mode, and keeps caches on scratch.
 
-## 4. Run Certification
+## 5. Run Certification
+
+Before the GPU suites, the non-GPU env suite should now print progress lines such as:
+
+- `starting env suite`
+- `checking required imports`
+- `initializing local ray`
+- `probing model/tokenizer download`
+- `env suite passed`
+
+That output is the easiest way to confirm it is actively working instead of silently hanging.
 
 Short GPU debug check:
 
@@ -86,7 +116,7 @@ sbatch scripts/sol/run_certify_vllm.sbatch
 
 Each job runs `python -m dapo_lab.sol_certify` and writes machine-readable reports under the configured output directory.
 
-## 5. What The Certifier Proves
+## 6. What The Certifier Proves
 
 Environment suite:
 
@@ -107,7 +137,7 @@ Runtime suites:
 - the post-update actor behavior changes on the batch
 - GRPO, GDPO, and DAPO emit the expected variant metrics
 
-## 6. Promote To Research
+## 7. Promote To Research
 
 Only after `debug`, `hf`, and `vllm` are green should you submit:
 

@@ -55,6 +55,10 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
 
+def _log(message: str) -> None:
+    print(f"[sol_certify] {message}", flush=True)
+
+
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise CertificationFailure(message)
@@ -111,48 +115,79 @@ def _check_torch_cuda() -> dict[str, Any]:
 def _check_transformers_model(model_name: str, cache_dir: str | None) -> dict[str, Any]:
     transformers = importlib.import_module("transformers")
     kwargs = {"cache_dir": cache_dir} if cache_dir else {}
+    _log(f"probing transformers tokenizer for {model_name} (cache_dir={cache_dir or 'default'})")
     tokenizer = transformers.AutoTokenizer.from_pretrained(model_name, **kwargs)
+    _log(f"tokenizer loaded: {tokenizer.__class__.__name__}")
     config = transformers.AutoConfig.from_pretrained(model_name, **kwargs)
+    _log(f"model config loaded: {getattr(config, 'model_type', 'unknown')}")
     return {
         "tokenizer_class": tokenizer.__class__.__name__,
         "model_type": getattr(config, "model_type", "unknown"),
     }
 
 
-def run_env_suite(config_path: Path, report_dir: Path, *, require_gpu: bool) -> SuiteResult:
-    config = load_experiment_config(config_path)
-    scratch_roots = {
-        "HF_HOME": os.environ.get("HF_HOME", ""),
-        "TRANSFORMERS_CACHE": os.environ.get("TRANSFORMERS_CACHE", ""),
-        "VLLM_CACHE_ROOT": os.environ.get("VLLM_CACHE_ROOT", ""),
-        "RAY_TMPDIR": os.environ.get("RAY_TMPDIR", ""),
-        "TORCH_EXTENSIONS_DIR": os.environ.get("TORCH_EXTENSIONS_DIR", ""),
+def _ensure_sol_cache_env() -> dict[str, str]:
+    defaults = {
+        "HF_HOME": f"/scratch/{os.environ['USER']}/dapo_lab/hf",
+        "VLLM_CACHE_ROOT": f"/scratch/{os.environ['USER']}/dapo_lab/vllm",
+        "RAY_TMPDIR": f"/scratch/{os.environ['USER']}/dapo_lab/ray",
+        "TORCH_EXTENSIONS_DIR": f"/scratch/{os.environ['USER']}/dapo_lab/torch",
     }
+    os.environ.setdefault("HF_HOME", defaults["HF_HOME"])
+    os.environ.setdefault("TRANSFORMERS_CACHE", os.environ["HF_HOME"])
+    for key, default in defaults.items():
+        os.environ.setdefault(key, default)
+
+    realized = {
+        "HF_HOME": os.environ["HF_HOME"],
+        "TRANSFORMERS_CACHE": os.environ["TRANSFORMERS_CACHE"],
+        "VLLM_CACHE_ROOT": os.environ["VLLM_CACHE_ROOT"],
+        "RAY_TMPDIR": os.environ["RAY_TMPDIR"],
+        "TORCH_EXTENSIONS_DIR": os.environ["TORCH_EXTENSIONS_DIR"],
+    }
+    for value in realized.values():
+        Path(value).mkdir(parents=True, exist_ok=True)
+    return realized
+
+
+def run_env_suite(config_path: Path, report_dir: Path, *, require_gpu: bool) -> SuiteResult:
+    _log("starting env suite")
+    config = load_experiment_config(config_path)
+    scratch_roots = _ensure_sol_cache_env()
     for key, value in scratch_roots.items():
         if value:
             _require("/scratch/" in value, f"{key} should point at /scratch on SOL, got {value!r}")
+
+    _log("checking required imports")
+    imports = {
+        "torch": _check_import("torch"),
+        "ray": _check_import("ray"),
+        "omegaconf": _check_import("omegaconf"),
+        "transformers": _check_import("transformers"),
+        "verl": _check_import("verl"),
+    }
+    _log("initializing local ray")
+    ray_details = _check_ray()
+    _log("probing model/tokenizer download")
+    model_probe = _check_transformers_model(config.verl.model_path, scratch_roots.get("HF_HOME") or None)
 
     details = {
         "python": sys.executable,
         "python_version": ".".join(map(str, sys.version_info[:3])),
         "scratch_paths": scratch_roots,
-        "imports": {
-            "torch": _check_import("torch"),
-            "ray": _check_import("ray"),
-            "omegaconf": _check_import("omegaconf"),
-            "transformers": _check_import("transformers"),
-            "verl": _check_import("verl"),
-        },
-        "ray": _check_ray(),
+        "imports": imports,
+        "ray": ray_details,
         "dataset_paths": {"train_files": config.data.train_files, "val_files": config.data.val_files},
-        "model_probe": _check_transformers_model(config.verl.model_path, scratch_roots.get("HF_HOME") or None),
+        "model_probe": model_probe,
     }
     if require_gpu:
+        _log("checking GPU visibility")
         details["nvidia_smi"] = _check_nvidia_smi()
         details["torch_cuda"] = _check_torch_cuda()
 
     result = SuiteResult(name="env", passed=True, details=details)
     _write_json(report_dir / "env_report.json", result.to_dict())
+    _log("env suite passed")
     return result
 
 
