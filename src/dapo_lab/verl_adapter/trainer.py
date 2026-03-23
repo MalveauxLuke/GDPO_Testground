@@ -25,6 +25,13 @@ except Exception:  # pragma: no cover - exercised only when verl is absent
 class ResearchTrainer(_VerlRayPPOTrainer):
     """Thin shim that keeps the research loop local while delegating workers to verl."""
 
+    _VERL_REQUIRED_INIT_KWARGS = {
+        "config",
+        "tokenizer",
+        "role_worker_mapping",
+        "resource_pool_manager",
+    }
+
     def __init__(
         self,
         *,
@@ -38,7 +45,19 @@ class ResearchTrainer(_VerlRayPPOTrainer):
         self.trainer_loop = trainer_loop or TrainerLoop(experiment_config, diagnostics=self.diagnostics)
         self.completed_steps = 0
         self.completed_actor_updates = 0
-        super().__init__(**verl_kwargs)
+        self._verl_runtime_initialized = False
+
+        provided_init_kwargs = {key for key in self._VERL_REQUIRED_INIT_KWARGS if key in verl_kwargs}
+        if provided_init_kwargs and provided_init_kwargs != self._VERL_REQUIRED_INIT_KWARGS:
+            missing = ", ".join(sorted(self._VERL_REQUIRED_INIT_KWARGS - provided_init_kwargs))
+            raise TypeError(
+                "ResearchTrainer received a partial verl runtime initialization. "
+                f"Missing required kwargs: {missing}."
+            )
+
+        if provided_init_kwargs == self._VERL_REQUIRED_INIT_KWARGS:
+            super().__init__(**verl_kwargs)
+            self._verl_runtime_initialized = True
 
     def fit_local_batches(self, generated_batches: list[Any]) -> Any:
         local_batches = [
