@@ -102,3 +102,10 @@ def test_gdpo_rejects_dapo_only_surfaces() -> None:
     config.algorithm.group_filtering.enabled = True
     with pytest.raises(ConfigValidationError):
         validate_experiment_config(config)
+
+
+def test_gdpo_rejects_dual_clip_ratio_c() -> None:
+    config = build_config("gdpo")
+    config.algorithm.policy_loss.clip_ratio_c = 3.0
+    with pytest.raises(ConfigValidationError):
+        validate_experiment_config(config)

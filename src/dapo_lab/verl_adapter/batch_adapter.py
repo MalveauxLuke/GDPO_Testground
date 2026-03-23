@@ -264,10 +264,11 @@ def _concat_batches(selected_batches: list[Any]) -> Any:
 def _set_batch_field(upstream_batch: Any, key: str, value: Any) -> None:
     batch = _lookup(upstream_batch, "batch")
     if batch is not None:
-        batch[key] = value
+        batch[key] = _coerce_batch_field_value(batch, key, value)
         return
     if isinstance(upstream_batch, dict):
-        upstream_batch.setdefault("batch", {})[key] = value
+        batch_dict = upstream_batch.setdefault("batch", {})
+        batch_dict[key] = _coerce_batch_field_value(batch_dict, key, value)
         return
     raise TypeError(f"Cannot assign batch field {key!r} on {type(upstream_batch)!r}")
 
@@ -280,6 +281,29 @@ def _set_meta(upstream_batch: Any, key: str, value: Any) -> None:
             return
         raise TypeError(f"Cannot assign meta_info on {type(upstream_batch)!r}")
     meta[key] = value
+
+
+def _coerce_batch_field_value(batch: Any, key: str, value: Any) -> Any:
+    try:
+        import torch  # type: ignore
+    except Exception:  # pragma: no cover - torch is optional in local tests
+        torch = None  # type: ignore
+
+    if torch is None:
+        return value
+
+    reference_names_by_key = {
+        "advantages": ("advantages", "returns", "old_log_probs", "new_log_probs", "token_level_rewards"),
+        "returns": ("returns", "advantages", "old_log_probs", "new_log_probs", "token_level_rewards"),
+        "token_level_rewards": ("token_level_rewards", "returns", "advantages", "old_log_probs", "new_log_probs"),
+        "response_mask": ("response_mask", "attention_mask"),
+    }
+
+    for reference_name in reference_names_by_key.get(key, (key,)):
+        reference = _lookup(batch, reference_name)
+        if isinstance(reference, torch.Tensor):
+            return torch.tensor(value, dtype=reference.dtype, device=reference.device)
+    return value
 
 
 def prepare_actor_update_batch(outcome: LoopOutcome, upstream_batches: list[Any]) -> PreparedActorBatch:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 from dapo_lab.trainer.loop import LoopOutcome
@@ -18,7 +19,13 @@ class FakeUpstreamBatch:
     def __getitem__(self, indices):
         if not isinstance(indices, list):
             raise TypeError("FakeUpstreamBatch supports list indexing only.")
-        batch = {key: [value[index] for index in indices] for key, value in self.batch.items()}
+        batch = {}
+        for key, value in self.batch.items():
+            rows = [value[index] for index in indices]
+            if isinstance(value, FakeTensor):
+                batch[key] = FakeTensor(rows, dtype=value.dtype, device=value.device)
+            else:
+                batch[key] = rows
         non_tensor = {key: [value[index] for index in indices] for key, value in self.non_tensor_batch.items()}
         return FakeUpstreamBatch(batch=batch, non_tensor_batch=non_tensor, meta_info=dict(self.meta_info))
 
@@ -27,9 +34,14 @@ class FakeUpstreamBatch:
         merged_batch: dict[str, list] = {}
         merged_non_tensor: dict[str, list] = {}
         for key in batches[0].batch:
-            merged_batch[key] = []
+            merged_rows = []
             for batch in batches:
-                merged_batch[key].extend(batch.batch[key])
+                merged_rows.extend(batch.batch[key])
+            if isinstance(batches[0].batch[key], FakeTensor):
+                first = batches[0].batch[key]
+                merged_batch[key] = FakeTensor(merged_rows, dtype=first.dtype, device=first.device)
+            else:
+                merged_batch[key] = merged_rows
         for key in batches[0].non_tensor_batch:
             merged_non_tensor[key] = []
             for batch in batches:
@@ -66,6 +78,27 @@ def _make_upstream_batch() -> FakeUpstreamBatch:
     )
 
 
+class FakeTensor:
+    def __init__(self, data, *, dtype="float32", device="cpu") -> None:
+        self.data = data
+        self.dtype = dtype
+        self.device = device
+
+    def tolist(self):
+        return self.data
+
+    def __getitem__(self, index):
+        return self.data[index]
+
+
+class FakeTorchModule:
+    Tensor = FakeTensor
+
+    @staticmethod
+    def tensor(value, *, dtype=None, device=None):
+        return FakeTensor(value, dtype=dtype or "float32", device=device or "cpu")
+
+
 def test_build_local_batch_extracts_prompt_groups_and_source_refs() -> None:
     trainer = ResearchTrainer(experiment_config=build_config("grpo"))
 
@@ -91,6 +124,34 @@ def test_apply_outcome_to_upstream_batch_materializes_actor_batch() -> None:
     assert actor_batch.meta_info["dapo_lab_prompt_count"] == 1
     assert actor_batch.meta_info["dapo_lab_trajectory_count"] == 2
     assert outcome.metrics["certify/adapter_prompt_count"] == 1.0
+
+
+def test_apply_outcome_to_upstream_batch_preserves_tensor_like_fields(monkeypatch) -> None:
+    monkeypatch.setitem(sys.modules, "torch", FakeTorchModule())
+    trainer = ResearchTrainer(experiment_config=build_config("grpo"))
+    upstream_batch = FakeUpstreamBatch(
+        batch={
+            "old_log_probs": FakeTensor([[0.0, 0.0], [0.0, 0.0]]),
+            "new_log_probs": FakeTensor([[0.1, 0.1], [0.1, 0.1]]),
+            "response_mask": FakeTensor([[1, 1], [1, 1]], dtype="int64"),
+            "responses": FakeTensor([[1, 2], [3, 4]], dtype="int64"),
+        },
+        non_tensor_batch={
+            "prompt_id": ["p1", "p1"],
+            "prompt": ["What is 2 + 2?", "What is 2 + 2?"],
+            "ground_truth": ["4", "4"],
+            "response_text": ["Scratch work.\nAnswer: \\boxed{4}", "Scratch work.\nAnswer: 5"],
+        },
+        meta_info={"source": "fake"},
+    )
+
+    outcome = trainer.fit_local_batches([upstream_batch])
+    actor_batch = trainer.apply_outcome_to_upstream_batch(outcome, [upstream_batch])
+
+    assert isinstance(actor_batch.batch["advantages"], FakeTensor)
+    assert actor_batch.batch["advantages"].dtype == "float32"
+    assert isinstance(actor_batch.batch["response_mask"], FakeTensor)
+    assert actor_batch.batch["response_mask"].dtype == "int64"
 
 
 def test_update_actor_from_outcome_emits_delta_metric() -> None:

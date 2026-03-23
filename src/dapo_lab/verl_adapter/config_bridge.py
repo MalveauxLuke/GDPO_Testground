@@ -5,6 +5,14 @@ from dataclasses import asdict
 from dapo_lab.config_schema import ExperimentConfig
 
 
+def _reward_manager_name(config: ExperimentConfig) -> str:
+    if config.algorithm.variant == "gdpo":
+        return "gdpo"
+    if config.algorithm.variant == "dapo":
+        return "dapo"
+    return "naive"
+
+
 def build_verl_config(config: ExperimentConfig) -> dict:
     policy = config.algorithm.policy_loss
     filtering = config.algorithm.group_filtering
@@ -31,7 +39,10 @@ def build_verl_config(config: ExperimentConfig) -> dict:
             "gdpo_reward_weights": config.algorithm.gdpo.component_weights,
         },
         "reward": {
-            "reward_manager": {"name": "dapo_lab_local"},
+            "reward_manager": {
+                "source": "register",
+                "name": _reward_manager_name(config),
+            },
             "reward_kwargs": {
                 "overlong_buffer_cfg": {
                     "enable": overlong.enabled,

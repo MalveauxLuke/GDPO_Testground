@@ -73,7 +73,7 @@ def _write_smoke_config(tmp_path: Path, *, variant: str) -> Path:
                 "clip_ratio": 0.2,
                 "clip_ratio_low": 0.2,
                 "clip_ratio_high": 0.28 if variant == "dapo" else 0.2,
-                "clip_ratio_c": 3.0,
+                "clip_ratio_c": 3.0 if variant == "dapo" else None,
                 "loss_agg_mode": "token-mean",
             },
             "group_filtering": {

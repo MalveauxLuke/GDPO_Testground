@@ -129,6 +129,10 @@ def validate_experiment_config(config: ExperimentConfig) -> ExperimentConfig:
             not overlong.enabled,
             "Strict GDPO v1 does not enable reward.overlong.enabled.",
         )
+        _ensure(
+            policy.clip_ratio_c is None,
+            "Strict GDPO v1 does not enable algorithm.policy_loss.clip_ratio_c.",
+        )
         if policy.clip_ratio_low is not None:
             _ensure(
                 policy.clip_ratio_low == policy.clip_ratio,

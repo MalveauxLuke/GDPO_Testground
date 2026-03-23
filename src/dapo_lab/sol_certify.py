@@ -199,12 +199,14 @@ def _variant_runtime_payload(
         payload["algorithm"]["rollout_behavior"]["accumulate_filtered_groups"] = False
         payload["algorithm"]["policy_loss"]["clip_ratio_high"] = payload["algorithm"]["policy_loss"]["clip_ratio"]
         payload["algorithm"]["policy_loss"]["clip_ratio_low"] = payload["algorithm"]["policy_loss"]["clip_ratio"]
+        payload["algorithm"]["policy_loss"]["clip_ratio_c"] = None
     elif variant == "gdpo":
         payload["reward"]["overlong"]["enabled"] = False
         payload["algorithm"]["group_filtering"]["enabled"] = False
         payload["algorithm"]["rollout_behavior"]["accumulate_filtered_groups"] = False
         payload["algorithm"]["policy_loss"]["clip_ratio_high"] = payload["algorithm"]["policy_loss"]["clip_ratio"]
         payload["algorithm"]["policy_loss"]["clip_ratio_low"] = payload["algorithm"]["policy_loss"]["clip_ratio"]
+        payload["algorithm"]["policy_loss"]["clip_ratio_c"] = None
     else:
         payload["reward"]["overlong"]["enabled"] = True
         payload["algorithm"]["group_filtering"]["enabled"] = True
