@@ -5,6 +5,85 @@ from dataclasses import asdict
 from dapo_lab.config_schema import ExperimentConfig
 
 
+def _reward_model_rollout(config: ExperimentConfig) -> dict:
+    return {
+        "name": config.algorithm.rollout_behavior.backend,
+        "dtype": "bfloat16",
+        "gpu_memory_utilization": config.verl.rollout.gpu_memory_utilization,
+        "enforce_eager": config.verl.rollout.enforce_eager,
+        "cudagraph_capture_sizes": None,
+        "free_cache_engine": True,
+        "data_parallel_size": 1,
+        "expert_parallel_size": 1,
+        "tensor_model_parallel_size": config.verl.rollout.tensor_model_parallel_size,
+        "max_num_batched_tokens": 8192,
+        "max_model_len": None,
+        "max_num_seqs": 1024,
+        "load_format": "auto",
+        "engine_kwargs": {},
+        "limit_images": None,
+        "enable_chunked_prefill": True,
+        "enable_prefix_caching": True,
+        "disable_log_stats": True,
+        "skip_tokenizer_init": False,
+        "prompt_length": config.data.max_prompt_length,
+        "response_length": config.data.max_response_length,
+    }
+
+
+def _reward_model_block(config: ExperimentConfig) -> dict:
+    return {
+        "enable": False,
+        "enable_resource_pool": False,
+        "n_gpus_per_node": 0,
+        "nnodes": 0,
+        "model_path": None,
+        "rollout": _reward_model_rollout(config),
+    }
+
+
+def _legacy_reward_model_block() -> dict:
+    return {
+        "num_workers": None,
+        "reward_manager": None,
+        "enable": None,
+        "enable_resource_pool": None,
+        "n_gpus_per_node": None,
+        "nnodes": None,
+        "reward_loop_source": None,
+        "reward_loop_module_path": None,
+        "reward_loop_class_name": None,
+        "model": {
+            "path": None,
+            "external_lib": None,
+            "trust_remote_code": None,
+        },
+        "rollout": {
+            "name": None,
+            "dtype": None,
+            "gpu_memory_utilization": None,
+            "enforce_eager": None,
+            "cudagraph_capture_sizes": None,
+            "free_cache_engine": None,
+            "data_parallel_size": None,
+            "expert_parallel_size": None,
+            "tensor_model_parallel_size": None,
+            "max_num_batched_tokens": None,
+            "max_model_len": None,
+            "max_num_seqs": None,
+            "load_format": None,
+            "engine_kwargs": None,
+            "limit_images": None,
+            "enable_chunked_prefill": None,
+            "enable_prefix_caching": None,
+            "disable_log_stats": None,
+            "skip_tokenizer_init": None,
+            "prompt_length": None,
+            "response_length": None,
+        },
+    }
+
+
 def _reward_manager_name(config: ExperimentConfig) -> str:
     if config.algorithm.variant == "gdpo":
         return "gdpo"
@@ -38,10 +117,35 @@ def build_verl_config(config: ExperimentConfig) -> dict:
             "gdpo_reward_keys": config.algorithm.gdpo.component_keys,
             "gdpo_reward_weights": config.algorithm.gdpo.component_weights,
         },
+        "custom_reward_function": {
+            "path": None,
+            "name": None,
+        },
+        "reward_model": _legacy_reward_model_block(),
+        "sandbox_fusion": {
+            "url": None,
+            "max_concurrent": None,
+            "memory_limit_mb": None,
+        },
         "reward": {
+            "num_workers": 0,
+            "custom_reward_function": {
+                "path": None,
+                "name": "compute_score",
+            },
             "reward_manager": {
                 "source": "register",
                 "name": _reward_manager_name(config),
+                "module": {
+                    "path": None,
+                    "name": "custom_reward_manager",
+                },
+            },
+            "reward_model": _reward_model_block(config),
+            "sandbox_fusion": {
+                "url": None,
+                "max_concurrent": 64,
+                "memory_limit_mb": 1024,
             },
             "reward_kwargs": {
                 "overlong_buffer_cfg": {
