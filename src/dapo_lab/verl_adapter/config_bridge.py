@@ -99,16 +99,30 @@ def build_verl_config(config: ExperimentConfig) -> dict:
     adv_estimator = "gdpo" if config.algorithm.variant == "gdpo" else config.algorithm.advantage.mode
     return {
         "data": {
+            "tokenizer": None,
+            "use_shm": False,
             "train_files": config.data.train_files,
             "val_files": config.data.val_files,
+            "train_max_samples": -1,
+            "val_max_samples": -1,
             "train_batch_size": config.data.train_batch_size,
+            "val_batch_size": None,
             "gen_batch_size": config.data.gen_batch_size,
             "prompt_key": config.data.prompt_key,
             "max_prompt_length": config.data.max_prompt_length,
             "max_response_length": config.data.max_response_length,
+            "trust_remote_code": config.verl.trust_remote_code,
+            "return_raw_chat": True,
+            "shuffle": True,
+            "validation_shuffle": False,
+            "dataloader_num_workers": 1,
+            "filter_overlong_prompts": False,
+            "truncation": "error",
         },
         "algorithm": {
             "adv_estimator": adv_estimator,
+            "norm_adv_by_std_in_grpo": config.algorithm.advantage.normalize_by_std,
+            "use_kl_in_reward": config.algorithm.kl.enabled,
             "filter_groups": {
                 "enable": filtering.enabled,
                 "metric": filtering.metric,
@@ -162,9 +176,11 @@ def build_verl_config(config: ExperimentConfig) -> dict:
             "model": {
                 "path": config.verl.model_path,
                 "trust_remote_code": config.verl.trust_remote_code,
+                "use_shm": False,
             },
             "actor": {
                 "strategy": "fsdp",
+                "use_kl_loss": False,
                 "ppo_micro_batch_size_per_gpu": config.verl.actor.ppo_micro_batch_size_per_gpu,
                 "grad_clip": config.verl.actor.grad_clip,
                 "ppo_epochs": config.verl.actor.ppo_epochs,
@@ -176,22 +192,57 @@ def build_verl_config(config: ExperimentConfig) -> dict:
             },
             "rollout": {
                 "name": config.algorithm.rollout_behavior.backend,
+                "dtype": "bfloat16",
                 "n": config.data.rollout_n,
                 "temperature": config.algorithm.rollout_behavior.temperature,
                 "top_p": config.algorithm.rollout_behavior.top_p,
                 "top_k": config.algorithm.rollout_behavior.top_k,
+                "prompt_length": config.data.max_prompt_length,
                 "response_length": config.data.max_response_length,
                 "tensor_model_parallel_size": config.verl.rollout.tensor_model_parallel_size,
                 "gpu_memory_utilization": config.verl.rollout.gpu_memory_utilization,
                 "enforce_eager": config.verl.rollout.enforce_eager,
             },
         },
+        "critic": {
+            "enable": config.verl.critic,
+            "strategy": "fsdp",
+        },
         "trainer": {
             "project_name": config.experiment.name,
             "experiment_name": config.experiment.name,
+            "logger": ["console"],
+            "nnodes": 1,
+            "n_gpus_per_node": 1,
             "save_freq": config.trainer.save_freq,
             "test_freq": config.trainer.test_freq,
             "val_before_train": config.trainer.val_before_train,
+            "device": "cuda",
+            "use_legacy_worker_impl": "auto",
+        },
+        "global_profiler": {
+            "tool": None,
+            "steps": None,
+            "profile_continuous_steps": False,
+            "save_path": "outputs/profile",
+            "global_tool_config": {
+                "nsys": {
+                    "controller_nsight_options": {},
+                    "worker_nsight_options": {},
+                },
+                "torch_memory": {
+                    "kw_args": {},
+                },
+            },
+        },
+        "transfer_queue": {
+            "enable": False,
+        },
+        "ray_kwargs": {
+            "ray_init": {
+                "num_cpus": 1,
+            },
+            "timeline_json_file": None,
         },
         "dapo_lab": asdict(config),
     }

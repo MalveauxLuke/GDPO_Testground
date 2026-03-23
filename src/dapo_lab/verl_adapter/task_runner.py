@@ -32,7 +32,8 @@ def launch_with_verl(config: ExperimentConfig, compatibility: CompatibilityRepor
     class ResearchTaskRunner(TaskRunner):  # pragma: no cover - requires a live verl installation
         def run(self, upstream_config):
             actor_rollout_cls, ray_worker_group_cls = self.add_actor_rollout_worker(upstream_config)
-            self.add_critic_worker(upstream_config)
+            if need_critic(upstream_config):
+                self.add_critic_worker(upstream_config)
             self.add_reward_model_resource_pool(upstream_config)
             self.add_ref_policy_worker(upstream_config, actor_rollout_cls)
 
