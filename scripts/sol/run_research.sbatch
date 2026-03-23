@@ -10,7 +10,8 @@
 
 set -euo pipefail
 
-source "$(dirname "$0")/session_env.sh"
+REPO_DIR="${REPO_DIR:-$HOME/GDPO_Testground}"
+source "$REPO_DIR/scripts/sol/session_env.sh"
 
 module load mamba/latest
 module load "$CUDA_MODULE"
