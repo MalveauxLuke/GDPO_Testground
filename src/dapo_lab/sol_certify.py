@@ -11,7 +11,7 @@ import subprocess
 import sys
 from copy import deepcopy
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -51,7 +51,7 @@ RuntimeRunner = Callable[[Path, Path], dict[str, Any]]
 
 
 def _timestamp() -> str:
-    return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
